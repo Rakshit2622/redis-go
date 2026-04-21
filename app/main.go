@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 	"strings"
+	"sync"
 )
 
 type RespValue struct {
@@ -19,7 +20,14 @@ type CommandHandler func(args []RespValue) string
 var commands = map[string]CommandHandler{
 	"PING": handlePing,
 	"ECHO": handleEcho,
+	"SET":  handleSet,
+	"GET":  handleGet,
 }
+
+var (
+	store   = map[string]string{}
+	storeMu sync.RWMutex
+)
 
 func main() {
 
@@ -89,6 +97,32 @@ func handleEcho(args []RespValue) string {
 	}
 	s := args[0].str
 	return fmt.Sprintf("$%d\r\n%s\r\n", len(s), s)
+}
+
+func handleSet(args []RespValue) string {
+	if len(args) < 2 {
+		return "-ERR wrong number of arguments\r\n"
+	}
+	key := args[0].str
+	val := args[1].str
+	storeMu.Lock()
+	store[key] = val
+	storeMu.Unlock()
+	return "+OK\r\n"
+}
+
+func handleGet(args []RespValue) string {
+	if len(args) < 1 {
+		return "-ERR wrong number of arguments\r\n"
+	}
+	key := args[0].str
+	storeMu.RLock()
+	val, ok := store[key]
+	storeMu.RUnlock()
+	if !ok {
+		return "$-1\r\n"
+	}
+	return fmt.Sprintf("$%d\r\n%s\r\n", len(val), val)
 }
 
 func RespParser(buff []byte) (RespValue, int, error) {
